@@ -1,0 +1,422 @@
+; TRI_PAR_BASE
+;
+;        AUTEUR-E-S   : Tristan Larue, Alexandre Bouchard, Rose-Anne Dubois, Hana Mohamed Khereba
+;        DATE         : 08/12/2024
+;        ÉQUIPE       : Gr03-Equipe 11
+;        DESCRIPTION  : 
+;       
+;           Ce programme implémente un algorithme de tri radix qui permet de trier un tableau
+;           d'entiers en utilisant différentes bases (base 2 et base 16), d'afficher la médiane
+;           et d'afficher des compteurs d'opérations.
+
+
+    BR      a_main                ; Aller au main
+
+newline: .ASCII  "\n\x00"                                     ; Saut de ligne pour la sortie
+med1mes: .ASCII  "La médiane du tableau 1 : \x00"             ; Message pour médiane tableau 1
+med2mes: .ASCII  "La médiane du tableau 2 : \x00"             ; Message pour médiane tableau 2
+tab1mes: .ASCII  "Voici les valeurs du tableau 1 : \n\x00"    ; Message pour tableau 1
+tab2mes: .ASCII  "Voici les valeurs du tableau 2 : \n\x00"    ; Message pour tableau 2
+sortmes: .ASCII  "\nEN COURS DE TRIAGE PAR DIGIT!\n\n\x00"    ; Message indiquant tri en cours
+
+
+; A_MAIN
+;
+; Fonction principale qui génère deux tableaux aléatoires, les trie en base 2 et 16
+; et affiche le résultat. Tout cela en gérant la mémoire et les "call" nécessaires.
+;
+; PARAMÈTRES
+;    a_tab1     : Adresse de début du tableau 1.
+;    a_tab2     : Adresse de début du tableau 2.
+;    a_base     : Base utilisée pour le tri (2 ou 16).
+;    a_cur_ta   : Adresse du tableau actuellement en cours de traitement.
+;    a_accum    : Sauvegarde temporaire de l'accumulateur.
+;    a_temp_x   : Sauvegarde temporaire du registre X.
+;
+; RETOURNE
+;    Aucun. (retourne aucune valeur, mais effectue les opérations)
+
+a_tab1:          .EQUATE 64403          ; Adresse de début du tableau 1
+a_tab2:          .EQUATE 64433          ; Adresse de début du tableau 2
+a_base:          .EQUATE 64401          ; Base utilisée pour le tri
+a_cur_ta:        .EQUATE 64399          ; Adresse du tableau actuellement traité
+a_accum:         .EQUATE 64389          ; Sauvegarde temporaire pour l'accumulateur
+a_temp_x:        .EQUATE 64391          ; Sauvegarde temporaire pour le registre X
+
+a_main:  SUBSP   64,i           ; Réserver 64 octets pour les tableaux et arguments
+         STA     a_accum, d     ; Sauvegarder la valeur de l'accumulateur (registre A)
+         STX     a_temp_x, d    ; Sauvegarder la valeur du registre X
+
+         CALL    e_gentab       ; Créer un tableau aléatoire
+
+         CALL    f_coptab       ; Copier le tableau
+
+         CALL    g_prttab       ; Afficher les tableaux mélangés
+         STRO    sortmes, d     ; Indiquer que le tri est en cours
+
+         LDA     2,i            ; Charger la base 2
+         STA     a_base, d      ; Sauvegarder la base
+         LDA     a_tab1, i      ; Charger l'adresse du tableau 1
+         STA     a_cur_ta, d    ; Sauvegarder comme tableau actuellement traité
+         CALL    b_tritab       ; Trier le tableau en base 2
+
+         LDA     16,i           ; Charger la base 16
+         STA     a_base, d      ; Sauvegarder la base
+         LDA     a_tab2, i      ; Charger l'adresse du tableau 2
+         STA     a_cur_ta, d    ; Sauvegarder comme tableau actuellement traité
+         CALL    b_tritab       ; Trier le tableau en base 16
+
+         CALL    g_prttab       ; Afficher les tableaux triés
+         
+         ADDSP   64,i           ; Libérer les 64 octets réservés
+         STOP                   ; Terminer l'exécution du programme
+
+
+; B_TRITAB
+;
+; Description :
+;    Fonction qui trie un tableau d'entiers en utilisant l'algorithme de
+;    tri radix. Le tri est effectué digit par digit jusqu'à ce que tous 
+;    les digits aient été traités.
+;
+; PARAMÈTRES
+;    a_cur_ta  : Adresse du tableau actuellement en cours de traitement.
+;    a_base    : Base utilisée pour le tri (2 ou 16).
+;    b_offset  : Offset (décalage) actuel pour le masque.
+;    b_masbit  : Taille des bits du masque.
+;
+; RETOURNE
+;    Aucun (tableau trié dans la mémoire)
+
+b_offset:        .EQUATE 64393       ; Offset du masque
+b_masbit:        .EQUATE 64395       ; Taille des bits du masque
+
+b_tritab:SUBSP   4,i         ; Réserver 4 octets pour variables locales
+         CALL    d_offset    ; Calculer le décalage et log2(base)
+         LDX     0,i         ; Initialiser l'indice à 0
+         STX     b_offset, d ; Sauvegarder l'offset actuel dans la mémoire
+
+b_trilp: CALL    c_tridig    ; Trier le tableau par digit
+         LDA     b_offset, d ; Charger l'offset courant depuis la mémoire
+         ADDA    b_masbit, d ; Ajouter la taille des bits du masque à l'offset
+         STA     b_offset, d ; Sauvegarder le nouvel offset dans la mémoire
+
+       b_if_1: CPA     16,i      ; Comparer avec 16 pour vérifier si tous les digits ont été triés
+       b_eoi_1:BRLT    b_trilp   ; Si tous les digits n'ont pas été triés, revenir au début de la boucle
+
+         ADDSP   4,i         ; Libérer l'espace réservé pour les variables locales
+         RET0                ; Retourner à l'appel
+
+
+; C_TRIDIG
+;
+; Description :
+;    Fonction qui trie un tableau en fonction d'un digit spécifique
+;    en appliquant un masque sur les éléments du tableau. Il fait un comptage
+;    pour organiser les éléments selon leur digit courant.
+;
+; PARAMÈTRES
+;    a_base      : Base utilisée pour le tri (2 ou 16).
+;    a_cur_ta    : Adresse du tableau à trier.
+;    b_offset    : Décalage courant pour le masque.
+;    c_mask      : Masque appliqué pour isoler le digit courant.
+;    c_tempta    : Adresse du tableau temporaire utilisé pour le tri.
+;    c_count     : Tableau pour stocker les fréquences des digits.
+;    c_cumul     : Tableau pour les valeurs cumulatives des digits.
+;    c_index     : Indice temporaire.
+;    c_curnum    : Numéro masqué.
+;    c_bytind    : Index actuel du byte (adresse tableau + index).
+;    c_vertb2    : Vérification du deuxième tableau pour le compteur.
+;    c_indcnt    : Charger l'index du compteur.
+;    c_savcnt    : Sauvegarder le compteur.
+;
+; RETOURNE
+;    Aucun. (éléments réorganisés dans le tableau trié)
+
+c_mask:          .EQUATE 64389    ; Masque courant
+c_tempta:        .EQUATE 64323    ; Tableau temporaire
+c_count:         .EQUATE 64353    ; Tableau pour les occurrences des digits
+c_cumul:         .EQUATE 64355    ; Tableau pour les valeurs cumulatives
+c_index:         .EQUATE 64319    ; Indice temporaire
+c_curnum:        .EQUATE 64385    ; Numéro masqué 
+c_bytind:        .EQUATE 64387    ; Index actuel du byte (adresse tableau + index)
+c_vertb2:        .EQUATE 64463    ; vérification du deuxième tableau pour le compteur
+c_indcnt:        .EQUATE 64381    ; charger l'index du compteur
+c_savcnt:        .EQUATE 64383    ; sauvegarder le compteur
+
+c_tridig:SUBSP   72,i         ; Réserver un espace mémoire pour les variables locales nécessaires.
+         LDA     a_base,d     ; Charger la base pour le tri (2 ou 16).
+         SUBA    1,i          ; Calculer le masque initial (base - 1).
+         STA     c_mask,d     ; Sauvegarder le masque calculé.
+         LDX     0,i          ; Réinitialiser l'indice à zéro.
+
+c_adjmas:CPX     b_offset,d   ; Comparer l'indice courant avec l'offset requis pour le masque. (c_bcl)1)
+         BREQ    c_fstnum     ; Si le masque est correctement ajusté, continuer au traitement des éléments.
+         ASLA                 ; Doubler la valeur du masque (shift à gauche).
+         STA     c_mask,d     ; Sauvegarder le masque mis à jour.
+         ADDX    1,i          ; Incrémenter l'indice pour le décalage.
+
+       c_eob_1:BR      c_adjmas     ; Recommencer jusqu'à ce que le masque soit ajusté.
+
+c_fstnum:LDX     0,i          ; Réinitialiser l'indice pour parcourir le tableau.
+         ADDX    a_cur_ta,d   ; Calculer l'adresse du premier élément du tableau.
+         STX     c_bytind,d   ; Sauvegarder cette adresse de base pour les opérations suivantes.
+
+c_resmem:LDA     0,i          ; Initialiser la mémoire du tableau des occurrences (count[]).
+         LDX     0,i          ; Réinitialiser l'indice pour parcourir ce tableau.
+c_reslop:STA     c_tempta,x   ; Réinitialiser chaque position dans le tableau temporaire.
+         ADDX    2,i          ; Passer à l'entrée suivante dans le tableau.
+
+       c_if_1: CPX     60,i         ; Vérifier si tous les éléments ont été initialisés.
+       c_eoi_1:BRNE    c_reslop     ; Si ce n'est pas terminé, continuer.
+
+c_nxtnum:LDA     c_bytind,n   ; Charger l'élément courant depuis le tableau. (c_bcl_3)
+         ANDA    c_mask,d     ; Appliquer le masque pour isoler le digit courant.
+         STA     c_curnum,d   ; Sauvegarder le digit isolé.
+         LDX     0,i          ; Réinitialiser l'indice pour ajuster le numéro.
+         LDA     c_curnum,d   ; Charger le numéro.
+
+c_adjnum:CPX     b_offset,d   ; Vérifier si le décalage requis est atteint. (c_bcl_2) 
+         BREQ    c_ccount     ; Si le numéro est correctement ajusté, aller au comptage.
+         ASRA                 ; Décaler à droite pour ajuster le numéro au digit courant.
+         STA     c_curnum,d   ; Sauvegarder le numéro ajusté.
+         ADDX    1,i          ; Incrémenter l'indice pour le décalage.
+
+         c_eob_2:BR      c_adjnum     ; Répéter si nécessaire.
+
+c_ccount:LDX     c_curnum,d   ; Charger le digit courant pour comptage.
+         ASLX                 ; Calculer l'index dans le tableau des occurrences (count[]).
+         LDA     c_count,x    ; Charger la valeur actuelle pour ce digit.
+         ADDA    1,i          ; Incrémenter la fréquence pour ce digit.
+         STA     c_count,x    ; Sauvegarder la fréquence mise à jour.
+         LDA     c_bytind,d   ; Charger l'adresse du prochain élément.
+         ADDA    2,i          ; Passer à l'élément suivant.
+         STA     c_bytind,d   ; Sauvegarder la nouvelle adresse.
+
+       c_if_2: CPA     a_tab2,i     ; Vérifier si on a atteint la fin du tableau 1.
+       c_eoi_2:BREQ    c_ccumul     ; Si oui, passer à l'étape des valeurs cumulatives.
+       c_if_3: CPA     c_vertb2,i   ; Vérifier si on a atteint la fin du tableau 2.
+       c_eoi_3:BREQ    c_ccumul     ; Si oui, passer à l'étape des valeurs cumulatives.
+       c_eob_3:BR      c_nxtnum     ; Sinon, continuer le traitement des éléments.
+
+c_ccumul:LDX     0,i          ; Réinitialiser le compteur pour les valeurs cumulatives.
+
+c_cumulp:LDA     c_indcnt,x   ; Charger l'occurrence pour un digit.
+         STA     c_savcnt,x   ; Sauvegarder la valeur dans le tableau des cumuls.
+         SUBX    2,i          ; Décrémenter l'indice pour parcourir en sens inverse.
+
+       c_if_4: CPX     -32,i        ; Vérifier si toutes les valeurs ont été parcourues.
+       c_eoi_4:BRNE    c_cumulp     ; Répéter si nécessaire.
+
+         LDX     0,i          ; Réinitialiser l'indice.
+         STX     c_count,d    ; Sauvegarder la valeur dans c_count
+
+c_acculp:LDA     c_cumul,x    ; Charger la valeur cumulative courante.
+         ADDA    c_count,x    ; Ajouter l'occurrence actuelle à la valeur cumulative.
+         STA     c_cumul,x    ; Sauvegarder la nouvelle valeur cumulative.
+         ADDX    2,i          ; Passer à l'élément suivant.
+
+       c_if_5: CPX     32,i         ; Vérifier si toutes les valeurs ont été cumulées.
+       c_eoi_5:BRNE    c_acculp     ; Continuer si nécessaire.
+
+c_place1:LDX     0,i          ; Réinitialiser l'indice pour placer les éléments triés.
+         ADDX    a_cur_ta,d   ; Calculer l'adresse du premier élément du tableau.
+         STX     c_bytind,d   ; Sauvegarder cette adresse.
+
+c_place2:LDA     c_bytind,n   ; Charger l'élément courant. (c_bcl_5)
+         ANDA    c_mask,d     ; Appliquer le masque pour isoler le digit courant.
+         STA     c_curnum,d   ; Sauvegarder le digit isolé.
+         LDX     0,i          ; Réinitialiser l'indice pour ajuster le digit.
+
+c_place3:CPX     b_offset,d   ; Vérifier si le décalage requis est atteint. (c_bcl_4)
+         BREQ    c_tripla     ; Si oui, passer au placement dans le tableau temporaire.
+         ASRA                 ; Décaler à droite pour ajuster le digit.
+         STA     c_curnum,d   ; Sauvegarder le digit ajusté.
+         ADDX    1,i          ; Incrémenter l'indice pour le décalage.
+
+       c_eob_4:BR      c_place3     ; Répéter si nécessaire.
+
+c_tripla:LDX     c_curnum,d   ; Charger le digit ajusté.
+         ASLX                 ; Calculer l'index dans le tableau temporaire.
+         LDX     c_count,x    ; Charger la position actuelle pour ce digit.
+         ASLX                 ; Ajuster pour la taille de l'entrée.
+         LDA     c_bytind,n   ; Charger l'élément courant.
+         STA     c_tempta,x   ; Placer l'élément dans le tableau temporaire.
+         ASRX                 ; Réajuster la position
+         ADDX    1,i          ; Incrémenter la position
+         STX     c_index,d    ; Sauvegarder la nouvelle position
+
+         LDX     c_curnum,d   ; Charger le digit ajusté.
+         ASLX                 ; Calculer l'index.
+         LDA     c_index,d    ; Charger la nouvelle position.
+         STA     c_count,x    ; Mettre à jour la position dans le tableau des occurrences.
+
+         LDA     c_bytind,d   ; Charger l'adresse du prochain élément.
+         ADDA    2,i          ; Passer à l'élément suivant.
+         STA     c_bytind,d   ; Sauvegarder la nouvelle adresse.
+
+       c_if_6: CPA     a_tab2,i     ; Vérifier si la fin du tableau est atteinte.
+       c_eoi_6:BREQ    c_trifin     ; Si oui, terminer le tri.
+       c_if_7: CPA     c_vertb2,i   ; Vérifier si la fin du tableau 2 est atteinte.
+       c_eoi_7:BREQ    c_trifin     ; Si oui, terminer le tri.
+       c_eob_5:BR      c_place2     ; Sinon, continuer le placement.
+
+c_trifin:LDX     0,i          ; Réinitialiser l'indice pour le tableau final.
+         STX     c_index,d    ; Sauvegarder l'indice.
+
+c_endlop:LDA     c_tempta,x   ; Charger un élément du tableau temporaire
+         ADDX    a_cur_ta,d   ; Ajouter l'adresse de base
+         STX     c_index,d    ; Sauvegarder la nouvelle adresse.
+         STA     c_index,n    ; Placer l'élément dans le tableau final.
+         SUBX    a_cur_ta,d   ; Ajuster l'adresse.
+         ADDX    2,i          ; Passer au prochain élément
+         STX     c_index,d    ; Sauvegarder l'indice
+
+       c_if_8: CPX     30,i         ; Vérifier si tous les éléments ont été placés.
+       c_eoi_8:BRNE    c_endlop     ; Si non, continuer.
+
+         ADDSP   72,i         ; Libérer l'espace réservé.
+         RET0                 ; Retourner à l'appel.
+
+
+; D_OFFSET
+;
+; Description :
+;    Fonction qui calcule le décalage pour un masque en divisant la base par 2
+;    jusqu'à ce qu'il atteigne 1. Le décalage est (log_2(base)) et il est ensuite
+;    sauvegardé.
+;
+; PARAMÈTRES
+;    a_base     : Base utilisée pour le tri (2 ou 16).
+;
+; RETOURNE
+;    b_masbit   : Taille des bits calculée pour le masque.
+
+d_offset:SUBSP   4,i         ; Réserver 4 octets pour les variables locales.
+         STA     0,s         ; Stocker temporairement la base dans la pile.
+         STX     2,s         ; Initialiser le compteur à zéro dans la pile.
+         LDX     0,i         ; Réinitialiser le registre X.
+         LDA     a_base,d    ; Charger la base (2 ou 16).
+
+d_offslp:ASRA                ; Diviser la base par 2 par décalage à droite.
+         ADDX    1,i         ; Incrémenter le compteur.
+
+       d_if_1: CPA     1,i         ; Vérifier si la base est 1.
+       d_oei_1:BRNE    d_offslp    ; Répéter jusqu'à ce que la base soit 1.
+
+         STX     b_masbit,d  ; Sauvegarder log_2(base).
+         LDA     0,s         ; Restaurer la base initiale.
+         LDX     2,s         ; Restaurer le compteur.
+         ADDSP   4,i         ; Libérer l'espace réservé.
+         RET0                ; Retourner à l'appel.
+
+; E_GENTAB
+;
+; Description :
+;    Fonction qui génère un tableau aléatoire de 15 éléments. Les valeurs
+;    sont créées à l'aide de décalages logiques et de masques.
+;
+; PARAMÈTRES
+;    a_tab1:    : Adresse de début du tableau 1
+;    g_seed     : Graine utilisée pour générer les valeurs aléatoires.
+;
+; RETOURNE
+;    Aucun (le tableau généré est sauvegardé à "a_tab1").
+
+e_seed:          .EQUATE 18757        ; Graine initiale pour les valeurs aléatoires.
+e_mask15:        .EQUATE 32767        ; Masque pour limiter à 15 bits.
+
+e_gentab:SUBSP   2,i          ; Réserver 2 octets pour l'indice.
+         LDX     0,i          ; Initialiser l'indice à 0.
+         LDA     e_seed,i     ; Charger la graine initiale.
+
+e_genlop:STA     a_tab1,x     ; Stocker la valeur générée dans le tableau.
+         ASLA                 ; Décaler pour générer de nouveaux bits.
+         ANDA    e_mask15,i   ; Appliquer le masque pour garder 15 bits.
+         ADDX    2,i          ; Passer à l'élément suivant.
+
+       e_if_1: CPX     30,i         ; Vérifier si 15 éléments ont été générés.
+       e_eoi_1:BRNE    e_genlop     ; Répéter si le tableau n'est pas complet.
+
+         ADDSP   2,i          ; Libérer l'espace réservé.
+         RET0                 ; Retourner à l'appel.
+
+
+; F_COPTAB
+;
+; Description :
+;    Fonction qui copie les 15 éléments d'un tableau source vers le tableau destination.
+;    Les éléments sont copiés en mémoire, en partant de l'adresse "a_tab1" vers "a_tab2".
+;
+; PARAMÈTRES
+;     a_tab1:     : Adresse de début du tableau source
+;     a_tab2:     : Adresse de début du tableau destination
+;
+; RETOURNE
+;    Aucun (les données sont copiées directement dans le tableau "a_tab2").
+
+f_coptab:SUBSP   2,i         ; Réserver 2 octets pour l'indice.
+         LDX     0,i         ; Initialiser l'indice à 0.
+
+f_coplop:LDA     a_tab1,x    ; Charger l'élément depuis le tableau source.
+         STA     a_tab2,x    ; Copier dans le tableau destination.
+         ADDX    2,i         ; Passer au prochain élément.
+
+       f_if_1: CPX     30,i        ; Vérifier si tous les 15 éléments sont copiés.
+       f_eoi_1:BRNE    f_coplop    ; Reprendre la copie si nécessaire.
+
+         ADDSP   2,i         ; Libérer l'espace réservé.
+         RET0                ; Retourner à l'appel.
+
+
+; g_PRTTAB
+;
+; Description :
+;    Fonction qui affiche les éléments des tableaux `a_tab1` et `a_tab2`. Chaque
+;    élément est affiché sur une nouvelle ligne, suivi d'un saut de ligne. 
+;    La fonction affiche également les médianes correspondantes après avoir terminé
+;    l'affichage des éléments de chaque tableau.
+;
+; PARAMÈTRES
+;    a_tab1:    Adresse de début du tableau 1.
+;    a_tab2:    Adresse de début du tableau 2.
+;    g_med1:    Médiane du tableau 1.
+;    g_med2:    Médiane du tableau 2.
+;    tab1mes:   Message indiquant l'affichage du tableau 1.
+;    tab2mes:   Message indiquant l'affichage du tableau 2.
+;    med1mes:   Message indiquant l'affichage de la médiane du tableau 1.
+;    med2mes:   Message indiquant l'affichage de la médiane du tableau 2.
+;    newline:   Saut de ligne.
+;
+; RETOURNE
+;    Aucun. (Affiche directement les tableaux à la sortie standard).
+
+g_med1:     .EQUATE 64417    ; Médiane du tableau 1
+g_med2:     .EQUATE 64447    ; Médiane du tableau 2
+
+g_prttab:LDX     0,i         ; Initialiser l'indice à 0 pour commencer au premier élément.
+         STRO    tab1mes,d   ; Afficher le message pour le tableau 1.
+
+g_prtlop:DECO    a_tab1,x    ; Afficher l'élément courant du tableau 1. (g_bcl_1)
+         STRO    newline,d   ; Ajouter un saut de ligne après l'élément affiché.
+         ADDX    2,i         ; Passer à l'élément suivant dans le tableau.
+
+       g_if_1: CPX     30,i        ; Vérifier si tous les éléments du tableau 1 sont affichés.
+       g_eoi_1:BREQ    g_prtspt    ; Si terminé, passer à l'affichage des médianes.
+       g_if_2: CPX     60,i        ; Vérifier la fin des éléments (dans le tableau 2 éventuellement).
+       g_eoi_2:BRLT    g_prtlop    ; Continuer l'affichage tant que des éléments restent.
+
+         STRO    med2mes,d    ; Afficher le message pour la médiane du tableau 2.
+         DECO    g_med2,d     ; Afficher la médiane du tableau 2.
+         STRO    newline,d    ; Ajouter un saut de ligne après la médiane.
+         RET0                ; Terminer la fonction.
+
+g_prtspt:STRO    med1mes,d    ; Afficher le message pour la médiane du tableau 1.
+         DECO    g_med1,d     ; Afficher la médiane du tableau 1.
+         STRO    newline,d    ; Ajouter un saut de ligne après la médiane.
+         STRO    tab2mes,d    ; Afficher le message pour le tableau 2.
+
+       g_eob_1:BR      g_prtlop    ; Revenir à l'affichage des éléments pour le tableau 2.
+
+.END
+
